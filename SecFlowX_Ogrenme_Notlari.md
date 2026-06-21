@@ -18,6 +18,9 @@
 10. [List/Dict Comprehension](#listdict-comprehension)
 11. [Context Manager (with)](#context-manager-with)
 12. [Sanal Ortam (venv) ve Paket Yönetimi](#sanal-ortam-venv-ve-paket-yönetimi)
+13. [Kod Kalite Araçları (ruff, mypy)](#kod-kalite-araçları-ruff-mypy)
+14. [Asyncio — Asenkron Programlama](#asyncio--asenkron-programlama)
+15. [pyproject.toml](#pyprojecttoml)
 
 ---
 
@@ -752,13 +755,224 @@ Projeleri **WSL/Ubuntu home dizininde** (`~/secflowx-proje` gibi) tutmak, Window
 
 ---
 
-## 🎯 Sıradaki Konular (Faz 1 - Hafta 1 Devamı)
+## Kod Kalite Araçları (ruff, mypy)
 
-- [ ] `ruff` (lint + format), `mypy` (statik tip kontrolü) — kod kalite araçları
-- [ ] `asyncio` mantığı: event loop, `async/await`
-- [ ] `pyproject.toml` ile bağımlılık yönetimi
-- [ ] `.gitignore` kullanımı
+PL/SQL Developer / SQL Developer'ın seni yazım hatalarına karşı uyarması gibi düşün — Python dünyasında bu işi **bağımsız, ayrı araçlar** yapıyor (IDE'nin kendisi değil).
+
+### Kurulum
+
+```bash
+cd ~/secflowx-proje
+source venv/bin/activate
+pip install ruff mypy
+```
+
+### `ruff` — Lint + Format
+
+İki işi var:
+1. **Lint** — kod kalitesi kontrolü (kullanılmayan import, hatalı pattern'ler)
+2. **Format** — kodu otomatik düzenli hale getirir
+
+```bash
+ruff check .              # kontrol et, sorunları listele
+ruff check . --fix        # otomatik düzeltilebilenleri düzelt
+ruff format .              # kodu otomatik biçimlendir
+```
+
+**Örnek — yakaladığı hata:**
+```python
+import os
+import sys   # kullanılmıyor
+
+def topla(a: int, b: int) -> int:
+    return str(a + b)
+```
+
+```bash
+ruff check test_kalite.py
+```
+Çıktı:
+```
+F401 `os` imported but unused
+F401 `sys` imported but unused
+Found 2 errors.
+[*] 2 fixable with the --fix option.
+```
+
+### `mypy` — Statik Tip Kontrolü
+
+Type hint'leri **gerçekten kontrol eden** araç — PL/SQL'in compile-time tip kontrolüne en yakın Python karşılığı. Python normalde "yazarken kontrol etmez", `mypy` bu eksikliği kapatır.
+
+```bash
+mypy dosya.py
+```
+
+**Örnek — yakaladığı hata:**
+```python
+def topla(a: int, b: int) -> int:
+    return str(a + b)   # YANLIŞ! int demiştik, str döndürüyoruz
+```
+
+Çıktı:
+```
+test_kalite.py:3: error: Incompatible return value type (got "str", expected "int")  [return-value]
+Found 1 error in 1 file (checked 1 source file)
+```
+
+Düzeltilince (`return a + b`):
+```
+Success: no issues found in 1 source file
+```
+
+### Neden Önemli?
+
+Gerçek projelerde bu araçlar genelde **otomatikleştirilir**, elle çalıştırılmaz:
+
+| Yöntem | Ne zaman çalışır |
+|---|---|
+| VS Code "format on save" | `Ctrl+S` yapınca otomatik |
+| Pre-commit hook | `git commit` atmadan önce |
+| CI/CD (GitHub Actions) | `git push` sonrası, sunucuda |
+
+Takım çalışmasında kod stilini tutarlı tutmak ve tip hatalarını production'a kadar fark edilmeden bırakmamak için standart pratik.
 
 ---
 
-*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0 ve Faz 1 (Hafta 1) bölümlerini kapsar.*
+## Asyncio — Asenkron Programlama
+
+PL/SQL'den **en uzak** olan kavram — PL/SQL tamamen senkron (sıralı) bir dünya, Python'da `asyncio` ile paralel bekleme mantığı var.
+
+### Senkron (Normal) Kod Nasıl Çalışır?
+
+```python
+import time
+
+def kahve_yap():
+    print("Kahve hazırlanıyor...")
+    time.sleep(3)
+    print("Kahve hazır!")
+
+def ekmek_kizart():
+    print("Ekmek kızartılıyor...")
+    time.sleep(2)
+    print("Ekmek hazır!")
+
+kahve_yap()
+ekmek_kizart()
+```
+
+**Toplam süre: 5 saniye** (3+2) — kahve bitmeden ekmeğe başlanmıyor, PL/SQL'deki her satırın sırayla çalışması gibi.
+
+### Fonksiyon Çağırma Hatırlatması
+
+```python
+kahve_yap      # ❌ fonksiyonu ÇAĞIRMAZ, sadece referans verir
+kahve_yap()    # ✅ fonksiyonu ÇALIŞTIRIR — parantez şart
+```
+
+Python'da parametre olsun olmasın **parantez her zaman gereklidir** (PL/SQL'de parametresiz çağrıda parantez gerekmeyebilir, Python'da hep gerekir).
+
+### Neden Asyncio Gerekli? (Gerçek Hayat Mantığı)
+
+Kahve makinesi demlerken biz beklemeyiz, o sırada ekmeği de kızartmaya başlarız — **aynı anda iki "bekleme" işini yürütürüz.** `asyncio` bu mantığı koda taşır, özellikle **I/O bekleme** durumlarında (network isteği, dosya okuma, veritabanı sorgusu).
+
+### `async` / `await` Syntax'ı
+
+```python
+import asyncio
+
+async def kahve_yap():                  # "async def" ile tanımlanan = coroutine
+    print("Kahve hazırlanıyor...")
+    await asyncio.sleep(3)               # asenkron bekleme — "ben beklerken sen başka iş yap"
+    print("Kahve hazır!")
+
+async def ekmek_kizart():
+    print("Ekmek kızartılıyor...")
+    await asyncio.sleep(2)
+    print("Ekmek hazır!")
+
+async def main():
+    await asyncio.gather(                # birden fazla async işi AYNI ANDA başlatır
+        kahve_yap(),
+        ekmek_kizart()
+    )
+
+asyncio.run(main())                      # async kodun giriş kapısı
+```
+
+`time.sleep()` programı **tamamen durdurur**; `asyncio.sleep()` ise "bekliyorum ama sen bu arada başka iş yapabilirsin" der.
+
+**Sonuç:** Senkron versiyon 5 saniye sürerken, async versiyon **~3 saniyede** biter (en uzun süren işlem kadar, ikisi paralel ilerlediği için).
+
+### SecFlowX İçin Neden Kritik?
+
+100 farklı host taranacağını düşün, her birine network isteği atılıp cevap bekleniyor:
+
+- **Senkron:** Host 1'i tara, bitince Host 2... → 100 × 2 saniye = **200 saniye**
+- **Async:** Hepsini aynı anda başlat, hepsi paralel bekler → **~2-3 saniye**
+
+Dökümandaki *"tarayıcılar I/O-bound iştir"* notu tam bu yüzden — bekleme süresini paralelleştirmek devasa hız kazandırır.
+
+---
+
+## pyproject.toml
+
+`requirements.txt`'in daha gelişmiş, modern hali — projenin **tüm kimliğini** (ad, versiyon, Python sürümü, bağımlılıklar, araç ayarları) tek dosyada toplar. PL/SQL'de bir paket spesifikasyonu gibi düşünebilirsin.
+
+### Karşılaştırma
+
+```
+# requirements.txt — sadece paket listesi
+requests==2.34.2
+fastapi==0.115.0
+```
+
+```toml
+# pyproject.toml — projenin TÜM kimliği
+[project]
+name = "secflowx-proje"
+version = "0.1.0"
+description = "SecFlowX ogrenme projesi"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.34.2",
+    "fastapi>=0.115.0",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+strict = true
+```
+
+| `requirements.txt` | `pyproject.toml` |
+|---|---|
+| Sadece paket versiyonları | Proje adı, versiyon, Python sürümü, paketler |
+| `ruff`/`mypy` ayarları ayrı dosyalarda | Hepsi tek dosyada toplanır |
+| Eski yöntem ama hâlâ yaygın | Modern, güncel standart |
+
+FastAPI projesine geçince (Hafta 2) gerçek kullanımı görülecek — `pip install -e .` ile bu dosyadan kurulum yapılabiliyor.
+
+---
+
+## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
+
+- [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
+- [x] `venv`, `pip`, `requirements.txt`
+- [x] `ruff`, `mypy`
+- [x] `asyncio` mantığı
+- [x] `pyproject.toml` (kavramsal giriş)
+- [ ] `.gitignore` kullanımı (sıradaki pratik konu)
+
+## 🎯 Sıradaki Konular (Faz 1 — Hafta 2)
+
+- [ ] FastAPI temelleri: path/query parametreleri, request/response modelleri
+- [ ] Pydantic ile veri doğrulama ve serialization
+- [ ] Dependency injection, middleware, hata yönetimi
+- [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
+- [ ] `httpx` ile dış servislere async istek
+
+---
+
+*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0 ve Faz 1 (tamamı) bölümlerini kapsar.*
