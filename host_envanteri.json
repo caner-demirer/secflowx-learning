@@ -1,0 +1,1 @@
+[{"isim": "web-01", "ip": "192.168.1.10", "durum": "aktif", "risk_skoru": 7.2}, {"isim": "db-01", "ip": "192.168.1.20", "durum": "aktif", "risk_skoru": 9.1}, {"isim": "test-01", "ip": "192.168.1.30", "durum": "pasif", "risk_skoru": 2.5}]

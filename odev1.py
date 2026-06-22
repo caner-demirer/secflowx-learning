@@ -112,16 +112,15 @@ def port_kontrol(port: int) -> str:
     if 1 <= port <= 65535: # bu kallnım beyween gibi and olmadan kullanılıyor.
         return f"Port {port} geçerli"
     else:
-        return (f"Gelen {port} numaralı port 1 ile 65535 arasında olmalıdır.")
+        raise ValueError (f"{port} numaralı port 1 ile 65535 arasında olmalıdır.")
 
 port_list = [22, 243, 99999, -5, 8080]
 
 for port in port_list:
-    sonuc = port_kontrol(port)
     try:
-        print(sonuc)
-    except ValueError as sonuc:
-        print({sonuc})
+        print(port_kontrol(port))
+    except ValueError as e:
+        print(f"Hata: {e}")
     finally:
         print("--- kontrol tamamlandı ---")
         
@@ -135,12 +134,13 @@ veri = [asdict(host) for host in host_listesi]
 with open("host_envanteri.json", "w") as f:
     json.dump(veri,f)
 
-with open("host_envanteri.json", "r") as f:
-    veri = json.load(f)
-    try:
+try:
+    with open("host_envanteri.json", "r") as f:
+        veri = json.load(f)
         print(veri)
-    except FileNotFoundError:
-        print("Dosya bulunamadı.")
+        
+except FileNotFoundError:
+    print("Dosya bulunamadı.")
 
 print("------------------------------------------------------")
 
@@ -148,11 +148,11 @@ print("------------------------------------------------------")
 # Bonus
 #------------------------------------------------------
 def port_araligi_say(baslangic: int, bitis: int) -> int:
-    if baslangic == bitis:
+    if baslangic > bitis:
         return 0
     else:
         print(bitis - baslangic)
-        return port_araligi_say(baslangic + 1, bitis)
+        return 1 + port_araligi_say(baslangic + 1, bitis)
     
 print(port_araligi_say(5,10))
 print("------------------------------------------------------")
