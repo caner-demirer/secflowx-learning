@@ -1083,6 +1083,51 @@ Gerçek hayatta bu noktada Pydantic modeline geçilir.
 
 ---
 
+## FastAPI — Pydantic ile Response Modeli
+
+Fonksiyonun ne döndüreceğini önceden tanımlamak için kullanılır. Dict'in tip güvenli ve belgelenmiş hali.
+
+```python
+from pydantic import BaseModel
+
+class HostSonuc(BaseModel):
+    sorgu: str
+    durum: str
+    port_sayisi: int | None = None
+    protokol: str | None = None
+```
+
+- `str` → zorunlu alan (`*` ile gösterilir Swagger'da)
+- `int | None = None` → opsiyonel alan, verilmezse `null` döner
+- PL/SQL'deki `NUMBER DEFAULT NULL` ile aynı mantık
+
+### Fonksiyonda Kullanım
+
+```python
+@app.get("/host/{ip_adresi}")
+def host_sorgula(ip_adresi: str, detay: bool = False) -> HostSonuc:
+    ozel_ipler = ["192.168.1.1", "10.0.0.1", "172.16.0.1"]
+    durum = "iç ağ" if ip_adresi in ozel_ipler else "dış ağ"
+
+    if detay:
+        return HostSonuc(sorgu=ip_adresi, durum=durum, port_sayisi=1024, protokol="TCP")
+
+    return HostSonuc(sorgu=ip_adresi, durum=durum)
+```
+
+- `-> HostSonuc` → fonksiyonun ne döndüreceği artık belgelenmiş
+- Dict dönerken Swagger hiçbir şey bilmiyordu, şimdi schema otomatik oluşuyor
+- Opsiyonel alanlar verilmezse `null` olarak döner — dict'te hiç gelmiyordu
+
+### Dict vs Pydantic Farkı
+
+| | Dict | Pydantic |
+|---|---|---|
+| Swagger'da schema | ❌ Yok | ✅ Otomatik oluşur |
+| Tip kontrolü | ❌ Yok | ✅ Var |
+| Opsiyonel alan | Hiç gelmez | `null` olarak gelir |
+| Erişim | `sonuc["sorgu"]` | `sonuc.sorgu` |
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1099,7 +1144,7 @@ Gerçek hayatta bu noktada Pydantic modeline geçilir.
 - [x] FastAPI kurulum, uvicorn, /docs Swagger UI
 - [x] Path parameter
 - [x] Query parameter
-- [ ] Pydantic ile request/response modelleri
+- [x] Pydantic ile request/response modelleri
 - [ ] HTTP hata kodları
 - [ ] Dependency injection
 - [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
