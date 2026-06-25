@@ -956,6 +956,81 @@ FastAPI projesine geçince (Hafta 2) gerçek kullanımı görülecek — `pip in
 
 ---
 
+---
+
+## FastAPI Temelleri (Faz 1 — Hafta 2 Başlangıç)
+
+### FastAPI Nedir?
+
+Python ile **REST API** yazmak için kullanılan modern bir framework. SecFlowX'te tarama sonuçlarını, asset'leri, bulguları dışarıya sunan API katmanı tam olarak bu.
+
+PL/SQL dünyasında en yakın karşılığı: **Oracle REST Data Services (ORDS)** — veritabanını HTTP endpoint'leri üzerinden dışarıya açmak. FastAPI de aynı mantık ama çok daha esnek.
+
+### Kurulum
+
+```bash
+pip install fastapi uvicorn
+```
+
+`uvicorn` = FastAPI'yi çalıştıran web sunucusu.
+
+### İlk API
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()        # uygulamayı oluştur
+
+@app.get("/")          # GET isteğini yakala — decorator
+def root():
+    return {"mesaj": "SecFlowX API çalışıyor!"}   # dict döndür → otomatik JSON olur
+```
+
+Çalıştırma:
+```bash
+uvicorn main:app --reload
+```
+
+`--reload` = kod değişince otomatik yeniden başlar (geliştirme için).
+
+### `@app.get("/")` — Decorator Nedir?
+
+`@` işareti ile başlayan şeylere **decorator** deniyor — fonksiyonun davranışını değiştiriyor. Burada şunu söylüyor:
+
+> "Bu fonksiyon, `/` adresine gelen **HTTP GET** isteğine cevap versin."
+
+### HTTP Metodları
+
+| Decorator | HTTP Metodu | Ne için |
+|---|---|---|
+| `@app.get` | GET | Veri okuma |
+| `@app.post` | POST | Veri oluşturma |
+| `@app.put` | PUT | Veri güncelleme |
+| `@app.delete` | DELETE | Veri silme |
+
+### Yaygın HTTP Status Kodları
+
+| Kod | Anlamı |
+|---|---|
+| `200` | Başarılı |
+| `201` | Oluşturuldu (POST sonrası) |
+| `400` | Hatalı istek (client hatası) |
+| `401` | Yetkisiz |
+| `404` | Bulunamadı |
+| `500` | Sunucu hatası |
+
+### Swagger UI — Otomatik Dokümantasyon
+
+FastAPI'nin süper gücü — hiçbir şey yazmadan endpoint'leri okuyup **interaktif dokümantasyon** oluşturur:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+Buradan endpoint'leri test edebilir, curl komutlarını görebilir, response'ları inceleyebilirsin. PL/SQL'de bunu manuel yazman gerekirdi.
+
+---
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
