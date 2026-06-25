@@ -1031,6 +1031,56 @@ Buradan endpoint'leri test edebilir, curl komutlarını görebilir, response'lar
 
 ---
 
+## FastAPI — Path & Query Parameter
+
+### Path Parameter
+URL'in içine gömülen zorunlu parametre. Süslü parantez ile tanımlanır.
+
+```python
+@app.get("/host/{ip_adresi}")
+def host_sorgula(ip_adresi: str):
+    ozel_ipler = ["192.168.1.1", "10.0.0.1", "172.16.0.1"]
+    durum = "iç ağ" if ip_adresi in ozel_ipler else "dış ağ"
+    return {"sorgu": ip_adresi, "durum": durum}
+```
+
+- `{ip_adresi}` ile fonksiyon parametre ismi birebir aynı olmalı — farklı olursa hata
+- PL/SQL'deki `p_ip IN VARCHAR2` ile aynı mantık, sadece URL'den geliyor
+
+### Query Parameter
+`?` işaretinden sonra gelen opsiyonel parametre. URL'de `?` ile başlar.
+
+```python
+@app.get("/host/{ip_adresi}")
+def host_sorgula(ip_adresi: str, detay: bool = False):
+    ozel_ipler = ["192.168.1.1", "10.0.0.1", "172.16.0.1"]
+    durum = "iç ağ" if ip_adresi in ozel_ipler else "dış ağ"
+    sonuc: dict[str, str | int] = {"sorgu": ip_adresi, "durum": durum}
+    if detay:
+        sonuc["port_sayisi"] = 1024
+        sonuc["protokol"] = "TCP"
+    return sonuc
+```
+
+- URL: `/host/192.168.1.1?detay=true`
+- Default değer verilirse opsiyonel — PL/SQL'deki `DEFAULT FALSE` ile aynı mantık
+- YouTube'daki `?v=YMphjbxKCS0` ile aynı yapı, web'de her yerde bu format var
+
+### Path vs Query Farkı
+
+| | Path Parameter | Query Parameter |
+|---|---|---|
+| URL'de yeri | `/host/{ip}` | `?detay=true` |
+| Zorunlu mu? | ✅ Evet | ❌ Hayır, default alabilir |
+| Ne için | Kaynağı tanımlar | Filtreleme, ek seçenek |
+
+### dict karışık tip notu
+Dict içine hem `str` hem `int` girecekse:
+```python
+sonuc: dict[str, str | int] = {"sorgu": ip_adresi, "durum": durum}
+```
+Gerçek hayatta bu noktada Pydantic modeline geçilir.
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1039,6 +1089,14 @@ Buradan endpoint'leri test edebilir, curl komutlarını görebilir, response'lar
 - [x] `asyncio` mantığı
 - [x] `pyproject.toml` (kavramsal giriş)
 - [ ] `.gitignore` kullanımı (sıradaki pratik konu)
+
+## 🎯 Faz 1 — Hafta 2 Durumu (Devam Ediyor)
+- [x] FastAPI kurulum, uvicorn, /docs Swagger UI
+- [x] Path parameter
+- [x] Query parameter
+- [ ] Pydantic ile request/response modelleri
+- [ ] HTTP hata kodları
+- [ ] Dependency injection
 
 ## 🎯 Sıradaki Konular (Faz 1 — Hafta 2)
 
