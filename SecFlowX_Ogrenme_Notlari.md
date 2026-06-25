@@ -1081,6 +1081,8 @@ sonuc: dict[str, str | int] = {"sorgu": ip_adresi, "durum": durum}
 ```
 Gerçek hayatta bu noktada Pydantic modeline geçilir.
 
+---
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1088,24 +1090,21 @@ Gerçek hayatta bu noktada Pydantic modeline geçilir.
 - [x] `ruff`, `mypy`
 - [x] `asyncio` mantığı
 - [x] `pyproject.toml` (kavramsal giriş)
-- [ ] `.gitignore` kullanımı (sıradaki pratik konu)
+- [x] `.gitignore` kullanımı
+
+---
 
 ## 🎯 Faz 1 — Hafta 2 Durumu (Devam Ediyor)
+
 - [x] FastAPI kurulum, uvicorn, /docs Swagger UI
 - [x] Path parameter
 - [x] Query parameter
 - [ ] Pydantic ile request/response modelleri
 - [ ] HTTP hata kodları
 - [ ] Dependency injection
-
-## 🎯 Sıradaki Konular (Faz 1 — Hafta 2)
-
-- [ ] FastAPI temelleri: path/query parametreleri, request/response modelleri
-- [ ] Pydantic ile veri doğrulama ve serialization
-- [ ] Dependency injection, middleware, hata yönetimi
 - [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
 - [ ] `httpx` ile dış servislere async istek
 
 ---
 
-*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0 ve Faz 1 (tamamı) bölümlerini kapsar.*
+*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0, Faz 1 Hafta 1 ve Hafta 2 bölümlerini kapsar.*
