@@ -1194,6 +1194,31 @@ def tara(istek: TaramaIstegi) -> HostSonuc:
 ### FastAPI Routing Tablosu
 `@app.get`, `@app.post` decorator'ları FastAPI'nin routing tablosunu oluşturur:
 
+---
+
+## FastAPI — Dependency Injection
+
+Tekrar eden kodları tek yerde toplayıp endpoint'lere otomatik enjekte etmek için kullanılır.
+
+```python
+from fastapi import Depends
+
+def ip_dogrula(ip_adresi: str) -> str:
+    parcalar = ip_adresi.split(".")
+    if len(parcalar) != 4 or not all(p.isdigit() and 0 <= int(p) <= 255 for p in parcalar):
+        raise HTTPException(status_code=400, detail="Geçersiz IP adresi")
+    return ip_adresi
+
+@app.get("/host/{ip_adresi}")
+def host_sorgula(ip_adresi: str = Depends(ip_dogrula), detay: bool = False) -> HostSonuc:
+    ...
+```
+
+- `Depends(ip_dogrula)` → "bu parametre gelince önce ip_dogrula çalıştır, sonucu ver" demek
+- FastAPI önce dependency'i çalıştırır, hata yoksa endpoint'e girer
+- POST'ta body içindeki IP için direkt fonksiyon çağrısı yapılır: `ip_dogrula(istek.ip_adresi)`
+- Yardımcı fonksiyonlar her zaman kullananlardan önce tanımlanmalı — Python dosyayı yukardan aşağı okur
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1213,7 +1238,7 @@ def tara(istek: TaramaIstegi) -> HostSonuc:
 - [x] Pydantic ile response modeli (BaseModel)
 - [x] POST endpoint ve request body
 - [x] HTTP hata kodları (400, 404, HTTPException)
-- [ ] Dependency injection
+- [x] Dependency injection
 - [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
 - [ ] `httpx` ile dış servislere async istek
 
