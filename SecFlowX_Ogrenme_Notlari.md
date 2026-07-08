@@ -1193,6 +1193,11 @@ def tara(istek: TaramaIstegi) -> HostSonuc:
 
 ### FastAPI Routing Tablosu
 `@app.get`, `@app.post` decorator'ları FastAPI'nin routing tablosunu oluşturur:
+GET  /              → root
+GET  /host/{ip}     → host_sorgula
+POST /tara          → tara
+
+Biri istek attığında FastAPI bu tabloya bakar — URL eşleşmiyorsa otomatik 404 verir.
 
 ---
 
@@ -1219,6 +1224,112 @@ def host_sorgula(ip_adresi: str = Depends(ip_dogrula), detay: bool = False) -> H
 - POST'ta body içindeki IP için direkt fonksiyon çağrısı yapılır: `ip_dogrula(istek.ip_adresi)`
 - Yardımcı fonksiyonlar her zaman kullananlardan önce tanımlanmalı — Python dosyayı yukardan aşağı okur
 
+---
+
+## FastAPI — JWT Kimlik Doğrulama
+
+### Kurulum
+```bash
+pip install python-jose[cryptography] bcrypt==4.0.1
+```
+
+### Global Ayarlar
+```python
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from fastapi.security import OAuth2PasswordBearer
+import bcrypt
+
+GIZLI_ANAHTAR = "secflowx-super-gizli-anahtar-2024"  # gerçek projede gizli tutulur, koda yazılmaz
+ALGORITMA = "HS256"  # HMAC-SHA256
+TOKEN_SURESI = 30  # dakika
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/giris")
+
+sahte_kullanicilar = {
+    "caner": {
+        "kullanici_adi": "caner",
+        "sifre_hash": bcrypt.hashpw("sifre123".encode(), bcrypt.gensalt()).decode()
+    }
+}
+```
+
+### Token Oluşturma ve Doğrulama
+```python
+def token_olustur(veri: dict) -> str:
+    payload = veri.copy()  # .copy() — orijinal dict'i bozmamak için, Python'da dict'ler referans ile çalışır
+    bitis = datetime.utcnow() + timedelta(minutes=TOKEN_SURESI)
+    payload.update({"exp": bitis})  # exp → token bitiş zamanı, JWT standardı
+    return jwt.encode(payload, GIZLI_ANAHTAR, algorithm=ALGORITMA)
+
+def token_dogrula(token: str) -> str:
+    try:
+        payload = jwt.decode(token, GIZLI_ANAHTAR, algorithms=[ALGORITMA])
+        kullanici = payload.get("sub")  # sub → "subject", kimin tokeni, JWT standardı
+        if kullanici is None:
+            raise HTTPException(status_code=401, detail="Geçersiz token")
+        return kullanici
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Geçersiz token")
+```
+
+### Giriş Endpoint'i
+```python
+class GirisIstegi(BaseModel):
+    kullanici_adi: str
+    sifre: str
+
+@app.post("/giris")
+def giris(istek: GirisIstegi):
+    kullanici = sahte_kullanicilar.get(istek.kullanici_adi)
+    if not kullanici:
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
+    if not bcrypt.checkpw(istek.sifre.encode(), kullanici["sifre_hash"].encode()):
+        raise HTTPException(status_code=401, detail="Yanlış şifre")
+    token = token_olustur({"sub": istek.kullanici_adi})
+    return {"access_token": token, "token_type": "bearer"}
+```
+
+### Korumalı Endpoint
+```python
+@app.get("/host/{ip_adresi}")
+def host_sorgula(ip_adresi: str = Depends(ip_dogrula), detay: bool = False, token: str = Depends(oauth2_scheme)) -> HostSonuc:
+    kullanici = token_dogrula(token)
+    ...
+```
+- `Depends(oauth2_scheme)` → header'daki `Authorization: Bearer <token>` otomatik okunur
+- Token yoksa → 401 "Not authenticated"
+- Token geçersizse → 401 "Geçersiz token"
+- Token geçerliyse → endpoint çalışır
+
+### JWT Yapısı
+Token üç parçadan oluşur, nokta ile ayrılır:
+- **Header** → algoritma bilgisi
+- **Payload** → içindeki veri `{"sub": "caner", "exp": ...}`
+- **Signature** → gizli anahtar ile imzalanmış, sahte token oluşturulamaz
+
+### Terminal ile Test
+```bash
+# Token al
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/giris \
+  -H "Content-Type: application/json" \
+  -d '{"kullanici_adi": "caner", "sifre": "sifre123"}' \
+  | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Token ile istek at
+curl -X GET http://127.0.0.1:8000/host/192.168.1.1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Akış
+POST /giris  → kullanıcı adı + şifre gönder
+API          → token döndür (30 dakika geçerli)
+GET /host/.. → Authorization: Bearer <token> header ile istek at
+API          → token geçerliyse cevap ver, değilse 401
+
+### passlib uyumsuzluk notu
+Python 3.14 ile `passlib[bcrypt]` uyumsuz — direkt `bcrypt==4.0.1` kullan.
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1239,7 +1350,7 @@ def host_sorgula(ip_adresi: str = Depends(ip_dogrula), detay: bool = False) -> H
 - [x] POST endpoint ve request body
 - [x] HTTP hata kodları (400, 404, HTTPException)
 - [x] Dependency injection
-- [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
+- [x] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
 - [ ] `httpx` ile dış servislere async istek
 
 ---
