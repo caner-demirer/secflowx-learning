@@ -1128,6 +1128,72 @@ def host_sorgula(ip_adresi: str, detay: bool = False) -> HostSonuc:
 | Opsiyonel alan | Hiç gelmez | `null` olarak gelir |
 | Erişim | `sonuc["sorgu"]` | `sonuc.sorgu` |
 
+---
+
+## FastAPI — HTTP Hata Kodları ve HTTPException
+
+### Hata Kodları Mantığı
+- **4xx** → kullanıcı hatası — yanlış/geçersiz istek gönderdi
+- **5xx** → sunucu hatası — kodumuzda bir şey patladı
+- **400** → Bad Request — gönderilen veri geçersiz
+- **404** → Not Found — aranan kaynak bulunamadı
+- **422** → FastAPI'nin otomatik verdiği, tip uyuşmazlığı
+
+### HTTPException Kullanımı
+```python
+from fastapi import FastAPI, HTTPException
+
+raise HTTPException(status_code=400, detail="Geçersiz IP adresi")
+```
+PL/SQL'deki `RAISE_APPLICATION_ERROR` gibi — normal akışı durdurup hata fırlatır.
+
+### IP Doğrulama
+```python
+parcalar = ip_adresi.split(".")
+if len(parcalar) != 4 or not all(p.isdigit() and 0 <= int(p) <= 255 for p in parcalar):
+    raise HTTPException(status_code=400, detail="Geçersiz IP adresi")
+```
+- `split(".")` → stringi noktalara göre böler, liste döndürür
+- `len()` → string, liste, dict için eleman sayısı döndürür — PL/SQL'deki `LENGTH`'ten farklı, her tip için çalışır
+- `all()` → listedeki her eleman için koşul kontrolü yapar
+- `isdigit()` → string sadece rakamlardan mı oluşuyor
+- `0 <= int(p) <= 255` → PL/SQL'deki `p BETWEEN 0 AND 255` ile aynı
+
+### 404 — Kayıt Bulunamadı
+```python
+kayitli_hostlar = {
+    "192.168.1.1": "router",
+    "10.0.0.1": "firewall",
+    "172.16.0.1": "switch"
+}
+
+if ip_adresi not in kayitli_hostlar:
+    raise HTTPException(status_code=404, detail="Host bulunamadı")
+
+cihaz = kayitli_hostlar[ip_adresi]
+```
+- `kayitli_hostlar` → modül seviyesinde tanımlı dict, tüm endpoint'ler erişebilir — PL/SQL paketindeki global değişken gibi
+- 404 → FastAPI routing'de endpoint yoksa otomatik verir, kayıt yoksa sen verirsin
+
+### POST Endpoint — Request Body
+```python
+class TaramaIstegi(BaseModel):
+    ip_adresi: str
+    port: int = 80
+    protokol: str = "TCP"
+
+@app.post("/tara")
+def tara(istek: TaramaIstegi) -> HostSonuc:
+    ...
+    return HostSonuc(sorgu=istek.ip_adresi, durum=durum, port_sayisi=istek.port, protokol=istek.protokol)
+```
+- GET'te parametre URL'de görünür, POST'ta body'de JSON olarak gelir
+- `istek.ip_adresi` → Pydantic objesi, nokta ile erişilir — dict'teki `istek["ip_adresi"]`'nden farkı bu
+- Swagger'da GET edit box gösterir, POST text editör gösterir — parametre sayısıyla alakalı değil, verinin nerede taşındığıyla alakalı
+
+### FastAPI Routing Tablosu
+`@app.get`, `@app.post` decorator'ları FastAPI'nin routing tablosunu oluşturur:
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1144,8 +1210,9 @@ def host_sorgula(ip_adresi: str, detay: bool = False) -> HostSonuc:
 - [x] FastAPI kurulum, uvicorn, /docs Swagger UI
 - [x] Path parameter
 - [x] Query parameter
-- [x] Pydantic ile request/response modelleri
-- [ ] HTTP hata kodları
+- [x] Pydantic ile response modeli (BaseModel)
+- [x] POST endpoint ve request body
+- [x] HTTP hata kodları (400, 404, HTTPException)
 - [ ] Dependency injection
 - [ ] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
 - [ ] `httpx` ile dış servislere async istek
