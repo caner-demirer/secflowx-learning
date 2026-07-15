@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import bcrypt
 from fastapi.security import OAuth2PasswordBearer
+import httpx
 
 app = FastAPI()
 
@@ -87,6 +88,12 @@ def host_sorgula(ip_adresi: str = Depends(ip_dogrula), detay: bool = False, toke
         return HostSonuc(sorgu=ip_adresi, durum=durum, port_sayisi=1024, protokol="TCP")
     
     return HostSonuc(sorgu=ip_adresi, durum=durum, cihaz=cihaz)
+
+@app.get("/dis-servis/{ip_adresi}")
+async def dis_servis_sorgula(ip_adresi: str = Depends(ip_dogrula)):
+    async with httpx.AsyncClient() as client:
+        yanit = await client.get(f"http://ip-api.com/json/{ip_adresi}")
+    return {"ip": ip_adresi, "dis_servis_yaniti": yanit.json()}
 
 #------------------------------------------------------------------------------------
 # POST -> veri işleyerek okuma (fonksiyon sonucu gelen veriyi okuma)

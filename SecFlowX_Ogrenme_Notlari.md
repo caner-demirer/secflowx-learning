@@ -1330,6 +1330,47 @@ API          → token geçerliyse cevap ver, değilse 401
 ### passlib uyumsuzluk notu
 Python 3.14 ile `passlib[bcrypt]` uyumsuz — direkt `bcrypt==4.0.1` kullan.
 
+Tamam. Şimdi notları ekle. SecFlowX_Ogrenme_Notlari.md dosyasında ## FastAPI — JWT Kimlik Doğrulama bölümünün altına şunu ekle:
+markdown---
+
+## FastAPI — httpx ile Dış Servis Entegrasyonu
+
+Dış API'lere async istek atmak için `httpx` kullanılır.
+
+### Kurulum
+```bash
+pip install httpx
+```
+
+### Kullanım
+```python
+import httpx
+
+@app.get("/dis-servis/{ip_adresi}")
+async def dis_servis_sorgula(ip_adresi: str = Depends(ip_dogrula)):
+    async with httpx.AsyncClient() as client:
+        yanit = await client.get(f"http://ip-api.com/json/{ip_adresi}")
+    return {"ip": ip_adresi, "dis_servis_yaniti": yanit.json()}
+```
+
+- `async with httpx.AsyncClient() as client` → context manager, blok bitince bağlantı otomatik kapanır — `with open(...) as f` ile aynı mantık
+- `await client.get(...)` → isteği gönder, cevap gelene kadar bekle ama beklerken başka işlere bak
+- `yanit.json()` → gelen cevabı Python dict'ine çevirir — `json.loads()` ile aynı
+- Endpoint `async def` olmalı — `await` kullanabilmek için
+
+### ip-api.com — Ücretsiz IP Bilgi Servisi
+http://ip-api.com/json/8.8.8.8
+
+Döndürdüğü bilgiler: ülke, şehir, bölge, ISP, koordinat, timezone
+
+Siber güvenlikte buna **OSINT** (Open Source Intelligence) denir — açık kaynaklardan istihbarat toplama.
+
+### Not
+- `https://httpbin.org` test servisi bazen çöküyor — alternatif olarak `ip-api.com` kullan
+- `ip-api.com` SSL'i ücretli sunuyor — `http://` ile kullan, `https://` çalışmaz
+
+---
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1341,7 +1382,7 @@ Python 3.14 ile `passlib[bcrypt]` uyumsuz — direkt `bcrypt==4.0.1` kullan.
 
 ---
 
-## 🎯 Faz 1 — Hafta 2 Durumu (Devam Ediyor)
+## 🎯 Faz 1 — Hafta 2 Durumu: ✅ TAMAMLANDI
 
 - [x] FastAPI kurulum, uvicorn, /docs Swagger UI
 - [x] Path parameter
@@ -1351,7 +1392,7 @@ Python 3.14 ile `passlib[bcrypt]` uyumsuz — direkt `bcrypt==4.0.1` kullan.
 - [x] HTTP hata kodları (400, 404, HTTPException)
 - [x] Dependency injection
 - [x] Kimlik doğrulama: JWT, OAuth2 password flow, RBAC
-- [ ] `httpx` ile dış servislere async istek
+- [x] httpx ile dış servislere async istek (OSINT — ip-api.com)
 
 ---
 
