@@ -1682,6 +1682,192 @@ def asset_bulgulari(asset_id: int, db: Session = Depends(get_db)):
 
 ---
 
+## pytest — Otomatik Test
+
+Manuel Swagger testi yerine kodla otomatik test. Bir kere yazılır, her `git push`'ta otomatik koşar — "bir şey bozuldu mu?" sorusunu otomatik cevaplar.
+
+### Kurulum
+
+```bash
+pip install pytest httpx
+```
+
+### Test Tipleri
+
+| Tip | Ne test eder | Örnek |
+|---|---|---|
+| Unit test | Tek fonksiyon, DB yok | `ip_dogrula()` fonksiyonu |
+| Integration test | Endpoint + DB birlikte | `/asset` POST endpoint'i |
+| E2E test | Sistemin tamamı | Ayrı araçlar |
+
+### test_main.py — Temel Yapı
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from database import Base
+from main import app, get_db
+
+# Testler için SQLite kullanıyoruz — kurulum gerektirmez, hızlı
+TEST_DATABASE_URL = "sqlite:///./test.db"
+engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(bind=engine)
+
+@pytest.fixture
+def client():
+    Base.metadata.create_all(bind=engine)    # test başında tabloları oluştur
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+    app.dependency_overrides[get_db] = override_get_db  # PostgreSQL yerine SQLite kullan
+    yield TestClient(app)                    # testi çalıştır
+    Base.metadata.drop_all(bind=engine)      # test bitince tabloları sil
+
+def test_root(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {"mesaj": "SecFlowX API çalışıyor!"}
+
+def test_asset_ekle(client):
+    response = client.post("/asset", json={
+        "isim": "test-server",
+        "ip_adresi": "10.0.0.99"
+    })
+    assert response.status_code == 200
+    assert response.json()["isim"] == "test-server"
+```
+
+### Temel Kavramlar
+
+**`TestClient`** — Uvicorn başlatmadan API'ye istek atan test istemcisi. Swagger'da elle tıklamak yerine kodla yapıyor.
+
+**`@pytest.fixture`** — Test öncesi hazırlık, test sonrası temizlik yapan fonksiyon. `yield` öncesi "hazırla", `yield` sonrası "temizle". PL/SQL'deki `BEFORE/AFTER` trigger mantığı.
+
+**`assert`** — "Bu doğru olmalı" demek. Yanlışsa test hata verir. PL/SQL'deki `utPLSQL`'de `ut.expect(...).to_equal(...)` ile aynı mantık.
+
+**`app.dependency_overrides[get_db] = override_get_db`** — `main.py`'a dokunmadan bağlantıyı SQLite'a yönlendir. Test ortamında gerçek PostgreSQL yerine geçici SQLite kullanılır — her test temiz başlar, temiz biter.
+
+### Neden SQLite (Testlerde)?
+
+Gerçek projede dev/test/prod ortamları ayrıdır. Otomatik testlerde SQLite kullanılır çünkü:
+- Kurulum gerektirmez
+- Her test sonrası `drop_all` ile tamamen silinir — unique constraint hatası olmaz
+- Hızlı çalışır
+
+Gerçek ortam ayrımı (dev/UAT/prod) `.env` dosyalarıyla yapılır.
+
+### Çalıştırma
+
+```bash
+pytest test_main.py -v       # -v: her testin adını ve sonucunu göster
+pytest test_main.py          # sadece geçti/kaldı özeti
+```
+
+---
+
+## Docker Compose
+
+PostgreSQL ve FastAPI uygulamasını tek komutla ayağa kaldırır.
+
+### Öncesi vs Sonrası
+
+**Öncesi (manuel):**
+```bash
+docker start secflowx-db    # 1. PostgreSQL başlat
+uvicorn main:app --reload   # 2. Uvicorn başlat
+```
+
+**Sonrası:**
+```bash
+docker compose up -d        # ikisi birden, arka planda
+```
+
+### docker-compose.yml
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: secflowx
+      POSTGRES_PASSWORD: secflowx123
+      POSTGRES_DB: secflowx
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://secflowx:secflowx123@db:5432/secflowx
+```
+
+| Alan | Açıklama |
+|---|---|
+| `image` | Hazır Docker imajı — sıfırdan kurmak yerine |
+| `environment` | Ortam değişkenleri — şifreler, ayarlar |
+| `ports` | `host:container` — dışarıdan erişim |
+| `depends_on` | `db` hazır olmadan `app` başlama |
+| `build: .` | Bu klasördeki Dockerfile'ı kullan |
+| `DATABASE_URL`'de `db` | Container'lar birbirini servis adıyla bulur, `localhost` değil |
+
+PL/SQL'deki `init.ora` / `tnsnames.ora` gibi — sistemin nasıl ayağa kalkacağını tanımlar. Farkı: sadece DB değil tüm sistemi (uygulama + DB) tek dosyada tanımlar.
+
+### Dockerfile
+
+```dockerfile
+FROM python:3.11-slim        # Python 3.11 kurulu hazır Linux imajı
+
+WORKDIR /app                 # container içinde çalışma klasörü
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt   # önce bağımlılıklar — Docker cache için
+
+COPY . .                     # tüm proje dosyalarını kopyala
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --host 0.0.0.0 → dışarıdan erişime izin ver (localhost olursa container dışından erişilemez)
+```
+
+### Komutlar
+
+```bash
+docker compose up --build    # image oluştur ve başlat (ilk seferinde veya Dockerfile değişince)
+docker compose up -d         # arka planda başlat
+docker compose down          # durdur ve container'ları sil
+docker compose logs          # logları gör
+docker ps                    # çalışan container'ları listele
+docker start <container_adi> # durmuş container'ı başlat
+```
+
+### Container İsimlendirme
+
+Docker Compose container adlarını otomatik üretir:
+```
+klasor_adi-servis_adi-numara
+secflowx-proje-db-1
+secflowx-proje-app-1
+```
+
+`docker run --name` ile başlatılınca sen isim verirsin. Compose kendi üretir.
+
+### Ayrı Database Oluşturma
+
+Mevcut container'a yeni database eklemek:
+```bash
+docker exec -it secflowx-proje-db-1 psql -U secflowx -c "CREATE DATABASE odev3;"
+```
+
+---
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1717,7 +1903,7 @@ def asset_bulgulari(asset_id: int, db: Session = Depends(get_db)):
 - [x] `relationship` ve `back_populates`
 - [x] Alembic — migration oluşturma ve uygulama
 - [x] CRUD endpoint'leri veritabanıyla entegre etme
-- [ ] pytest — unit test, fixture, API endpoint testi, mock
-- [ ] Docker Compose — DB + app birlikte
+- [x] pytest — unit test, fixture, API endpoint testi, mock
+- [x] Docker Compose — DB + app birlikte
 
 *Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0, Faz 1 Hafta 1, Hafta 2 ve Hafta 3 bölümlerini kapsar.*

@@ -5,6 +5,9 @@ from jose import JWTError, jwt
 import bcrypt
 from fastapi.security import OAuth2PasswordBearer
 import httpx
+from sqlalchemy.orm import Session
+from database import SessionLocal, Asset, Bulgu
+
 
 app = FastAPI()
 
@@ -53,6 +56,13 @@ def ip_dogrula(ip_adresi: str) -> str:
         raise HTTPException(status_code=400, detail="Geçersiz IP adresi")
     return ip_adresi
 
+def get_db():
+    db = SessionLocal() # bağlantı aç
+    try:
+        yield db        # db'yi endpoint'e ver, endpoint çalışsın
+    finally:
+        db.close()      # endpoint bitti, buradan devam et, kapat
+
 #------------------------------------------------------------------------------------
 # main.py sqldeki paket gibi düşün
 # host_sorgula, tara bizim prosedür/fonskiyonlarımız
@@ -95,6 +105,20 @@ async def dis_servis_sorgula(ip_adresi: str = Depends(ip_dogrula)):
         yanit = await client.get(f"http://ip-api.com/json/{ip_adresi}")
     return {"ip": ip_adresi, "dis_servis_yaniti": yanit.json()}
 
+# select * from asset
+@app.get("/assets")
+def asset_listele(db: Session = Depends(get_db)):
+    assets = db.query(Asset).all()
+    return assets
+
+# Bir asset'in tüm bulgularını getiren endpoint
+@app.get("/asset/{asset_id}/bulgular")
+def asset_bulgulari(asset_id: int, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset bulunamadı")
+    return asset.bulgular # bu asset'e ait tüm bulgular
+
 #------------------------------------------------------------------------------------
 # POST -> veri işleyerek okuma (fonksiyon sonucu gelen veriyi okuma)
 #------------------------------------------------------------------------------------
@@ -125,3 +149,40 @@ def giris(istek: GirisIstegi):
         raise HTTPException(status_code=401, detail="Yanlış şifre")
     token = token_olustur({"sub": istek.kullanici_adi})
     return {"access_token": token, "token_type": "bearer"}
+
+# insert into asset
+class AssetEkleIstegi(BaseModel):
+    isim: str
+    ip_adresi: str
+
+@app.post("/asset")
+def asset_ekle(istek: AssetEkleIstegi, db: Session = Depends(get_db)):
+    yeni_asset = Asset(isim=istek.isim, ip_adresi=istek.ip_adresi)
+    db.add(yeni_asset)
+    db.commit()
+    db.refresh(yeni_asset)
+    return {"id": yeni_asset.id, "isim": yeni_asset.isim, "ip_adresi": yeni_asset.ip_adresi}
+
+# insert into bulgu
+class BulguEkleIstegi(BaseModel):
+    asset_id: int
+    cve: str
+    cvss_skoru: float
+    aciklama: str
+
+@app.post("/bulgu")
+def bulgu_ekle(istek: BulguEkleIstegi, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == istek.asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset bulunamadı")
+    
+    yeni_bulgu = Bulgu(
+        asset_id=istek.asset_id,
+        cve=istek.cve,
+        cvss_skoru=istek.cvss_skoru,
+        aciklama=istek.aciklama
+    )
+    db.add(yeni_bulgu)
+    db.commit()
+    db.refresh(yeni_bulgu)
+    return yeni_bulgu
