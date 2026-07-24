@@ -1371,6 +1371,317 @@ Siber güvenlikte buna **OSINT** (Open Source Intelligence) denir — açık kay
 
 ---
 
+## Faz 1 — Hafta 3: Veri Katmanı
+
+---
+
+## PostgreSQL + Docker
+
+PostgreSQL'i Docker ile ayağa kaldırmak:
+
+```bash
+docker run --name secflowx-db \
+  -e POSTGRES_USER=secflowx \
+  -e POSTGRES_PASSWORD=secflowx123 \
+  -e POSTGRES_DB=secflowx \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+Sonraki oturumlarda container durmuş olabilir, başlatmak için:
+```bash
+docker start secflowx-db
+```
+
+Tabloları kontrol etmek için:
+```bash
+docker exec -it secflowx-db psql -U secflowx -d secflowx -c "\dt"
+```
+
+### PostgreSQL vs Oracle Farkları
+
+| Oracle/PL/SQL | PostgreSQL |
+|---|---|
+| `VARCHAR2` | `VARCHAR` veya `TEXT` |
+| `NUMBER` | `INTEGER`, `NUMERIC`, `FLOAT` |
+| `SYSDATE` | `NOW()` / `CURRENT_TIMESTAMP` |
+| `NVL()` | `COALESCE()` |
+| `ROWNUM` | `LIMIT` |
+| `REFERENCES` | `REFERENCES` (aynı) |
+
+SQL bilgisi %90 geçerli. İş mantığı veritabanında (stored procedure) değil Python'da yazılıyor — en büyük zihniyet farkı bu.
+
+---
+
+## SQLAlchemy — ORM Kavramı
+
+**ORM (Object-Relational Mapper):** SQL'i Python nesnelerine çeviren katman.
+
+PL/SQL'de:
+```sql
+INSERT INTO asset (isim, ip_adresi) VALUES ('web-server-01', '192.168.1.10');
+SELECT * FROM asset WHERE id = 1;
+```
+
+SQLAlchemy ile:
+```python
+asset = Asset(isim="web-server-01", ip_adresi="192.168.1.10")
+session.add(asset)
+session.commit()
+
+asset = db.query(Asset).filter(Asset.id == 1).first()
+```
+
+Arkada aynı SQL üretiliyor, biz yazmıyoruz.
+
+**Neden ORM?**
+- Tip güvenliği — sütun ismi yazım hatası mypy/IDE'de anında yakalanır
+- Farklı veritabanları (PostgreSQL, SQLite) aynı kodla çalışır
+- Karmaşık sorgularda direkt SQL de yazılabilir (`text()` ile)
+
+**Karmaşık sorgular için:** JOIN, recursive CTE, window function gibi durumlarda ORM'i zorlamak yerine ham SQL yazılır:
+```python
+db.execute(text("SELECT ... FROM ... JOIN ... WHERE ..."))
+```
+
+---
+
+## database.py — Kurulum
+
+```python
+from sqlalchemy import create_engine, String, DateTime, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Mapped, mapped_column, relationship
+from datetime import datetime
+
+DATABASE_URL = "postgresql://secflowx:secflowx123@localhost:5432/secflowx"
+# Format: postgresql://kullanici:sifre@host:port/veritabani_adi
+# PL/SQL'deki TNS/connection string karşılığı
+
+engine = create_engine(DATABASE_URL)
+# Bağlantıyı yöneten nesne — uygulama ayağa kalkarken bir kere oluşturulur
+# PL/SQL'deki connection pool gibi
+
+SessionLocal = sessionmaker(bind=engine)
+# Her istek için ayrı session açan fabrika
+# PL/SQL'deki transaction mantığı — aç, işle, commit/rollback, kapat
+
+class Base(DeclarativeBase):
+    pass
+# Tüm tablo class'larının miras alacağı temel class
+# SQLAlchemy "hangi class'lar tablo?" diye sorunca Base'e bakar
+```
+
+---
+
+## Asset Modeli
+
+```python
+class Asset(Base):
+    __tablename__ = "asset"   # veritabanındaki tablo adı
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    isim: Mapped[str] = mapped_column(String(100))
+    ip_adresi: Mapped[str] = mapped_column(String(50), unique=True)
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    bulgular: Mapped[list["Bulgu"]] = relationship(back_populates="asset")
+```
+
+PL/SQL karşılığı:
+```sql
+CREATE TABLE asset (
+    id              NUMBER PRIMARY KEY,
+    isim            VARCHAR2(100),
+    ip_adresi       VARCHAR2(50) UNIQUE,
+    olusturma_tarihi DATE DEFAULT SYSDATE
+);
+```
+
+- `Mapped[int]` → sütun tipi
+- `primary_key=True` → PK
+- `unique=True` → UNIQUE constraint
+- `default=datetime.utcnow` → PL/SQL'deki `DEFAULT SYSDATE`
+
+---
+
+## Bulgu Modeli ve Foreign Key
+
+```python
+class Bulgu(Base):
+    __tablename__ = "bulgu"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("asset.id"))
+    # ForeignKey("tablo_adi.sutun_adi") — PL/SQL'deki REFERENCES asset(id)
+    cve: Mapped[str] = mapped_column(String(50))
+    cvss_skoru: Mapped[float]
+    aciklama: Mapped[str] = mapped_column(String(500))
+    olusturma_tarihi: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    asset: Mapped["Asset"] = relationship(back_populates="bulgular")
+```
+
+PL/SQL karşılığı:
+```sql
+CREATE TABLE bulgu (
+    id               NUMBER PRIMARY KEY,
+    asset_id         NUMBER REFERENCES asset(id),
+    cve              VARCHAR2(50),
+    cvss_skoru       NUMBER,
+    aciklama         VARCHAR2(500),
+    olusturma_tarihi DATE DEFAULT SYSDATE
+);
+```
+
+### relationship ve back_populates
+
+SQL'de foreign key ilişkiyi tanımlar ama veriyi okumak için her seferinde JOIN yazman gerekir. `relationship` bu JOIN'i Python nesnesine taşır:
+
+```python
+# JOIN yazmadan asset'in tüm bulgularına erişim
+asset = db.query(Asset).first()
+asset.bulgular   # liste olarak gelir
+
+# JOIN yazmadan bulgunun ait olduğu asset'e erişim
+bulgu = db.query(Bulgu).first()
+bulgu.asset      # Asset nesnesi olarak gelir
+```
+
+`back_populates` iki yönü birbirine bağlar:
+- `Asset.bulgular` → o asset'e ait bulgu listesi
+- `Bulgu.asset` → o bulgunun ait olduğu asset
+
+---
+
+## Alembic — Migration
+
+PL/SQL'de şema değişikliği için DDL script'lerini elle yazardın. Alembic `database.py`'daki model değişikliklerini okuyup SQL'i **otomatik üretiyor**.
+
+### Kurulum
+
+```bash
+pip install sqlalchemy alembic psycopg2-binary
+alembic init migrations
+```
+
+`alembic.ini` dosyasında bağlantıyı ayarla:
+```ini
+sqlalchemy.url = postgresql://secflowx:secflowx123@localhost:5432/secflowx
+```
+
+`migrations/env.py` dosyasında modelleri tanıt:
+```python
+from database import Base
+target_metadata = Base.metadata
+```
+
+### Migration Komutları
+
+```bash
+# Migration dosyası oluştur (Alembic modeli okuyup SQL üretir)
+alembic revision --autogenerate -m "asset tablosu eklendi"
+
+# Migration'ı veritabanına uygula
+alembic upgrade head
+
+# Geri al
+alembic downgrade -1
+```
+
+Oluşturulan migration dosyası içinde:
+- `upgrade()` → `CREATE TABLE` — migration uygulandığında çalışır
+- `downgrade()` → `DROP TABLE` — geri alındığında çalışır
+
+`alembic_version` tablosu → hangi migration'ın uygulandığını takip eder. PL/SQL'deki `schema_version` tablosu gibi.
+
+---
+
+## main.py — Veritabanı Entegrasyonu
+
+### get_db — Session Dependency
+
+```python
+from sqlalchemy.orm import Session
+from database import SessionLocal, Asset, Bulgu
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
+
+Her istek için session açar, iş bitince kapatır. `yield` ile context manager gibi davranır — `yield`'e kadar "aç", `finally` "kapat". `Depends(get_db)` ile endpoint'lere enjekte edilir.
+
+### Endpoint'ler
+
+```python
+# Asset ekleme
+class AssetEkleIstegi(BaseModel):
+    isim: str
+    ip_adresi: str
+
+@app.post("/asset")
+def asset_ekle(istek: AssetEkleIstegi, db: Session = Depends(get_db)):
+    yeni_asset = Asset(isim=istek.isim, ip_adresi=istek.ip_adresi)
+    db.add(yeni_asset)       # INSERT hazırla — PL/SQL'deki INSERT
+    db.commit()              # veritabanına yaz — PL/SQL'deki COMMIT
+    db.refresh(yeni_asset)   # DB'nin atadığı id/tarih gibi alanları geri yükle
+    return {"id": yeni_asset.id, "isim": yeni_asset.isim, "ip_adresi": yeni_asset.ip_adresi}
+
+# Asset listele
+@app.get("/assets")
+def asset_listele(db: Session = Depends(get_db)):
+    assets = db.query(Asset).all()   # SELECT * FROM asset
+    return assets
+
+# Bulgu ekleme
+class BulguEkleIstegi(BaseModel):
+    asset_id: int
+    cve: str
+    cvss_skoru: float
+    aciklama: str
+
+@app.post("/bulgu")
+def bulgu_ekle(istek: BulguEkleIstegi, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == istek.asset_id).first()
+    # .filter() → WHERE clause
+    # .first() → ilk kaydı al, bulamazsa None döner (PL/SQL'deki ROWNUM = 1 gibi)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset bulunamadı")
+
+    yeni_bulgu = Bulgu(
+        asset_id=istek.asset_id,
+        cve=istek.cve,
+        cvss_skoru=istek.cvss_skoru,
+        aciklama=istek.aciklama
+    )
+    db.add(yeni_bulgu)
+    db.commit()
+    db.refresh(yeni_bulgu)
+    return yeni_bulgu
+
+# Asset'e ait bulgular — relationship kullanımı
+@app.get("/asset/{asset_id}/bulgular")
+def asset_bulgulari(asset_id: int, db: Session = Depends(get_db)):
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset bulunamadı")
+    return asset.bulgular   # relationship — JOIN yazmadan
+```
+
+### Sorgu Metotları
+
+| SQLAlchemy | SQL karşılığı |
+|---|---|
+| `db.query(Asset).all()` | `SELECT * FROM asset` |
+| `db.query(Asset).filter(Asset.id == 1).first()` | `SELECT * FROM asset WHERE id = 1 AND ROWNUM = 1` |
+| `db.add(nesne)` + `db.commit()` | `INSERT ... ; COMMIT` |
+| `asset.bulgular` | `SELECT * FROM bulgu WHERE asset_id = ?` (JOIN) |
+
+---
+
 ## 🎯 Faz 1 — Hafta 1 Durumu: ✅ TAMAMLANDI
 
 - [x] Modern Python syntax (type hints, dataclass, comprehension, context manager, exception handling)
@@ -1396,4 +1707,17 @@ Siber güvenlikte buna **OSINT** (Open Source Intelligence) denir — açık kay
 
 ---
 
-*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0, Faz 1 Hafta 1 ve Hafta 2 bölümlerini kapsar.*
+## 🎯 Faz 1 — Hafta 3 Durumu: 🔄 DEVAM EDİYOR
+
+- [x] PostgreSQL Docker ile kurulum
+- [x] SQLAlchemy — ORM kavramı
+- [x] `database.py` — engine, SessionLocal, Base
+- [x] `Asset` modeli tanımlama
+- [x] `Bulgu` modeli ve ForeignKey
+- [x] `relationship` ve `back_populates`
+- [x] Alembic — migration oluşturma ve uygulama
+- [x] CRUD endpoint'leri veritabanıyla entegre etme
+- [ ] pytest — unit test, fixture, API endpoint testi, mock
+- [ ] Docker Compose — DB + app birlikte
+
+*Bu döküman, Claude ile yapılan interaktif öğrenme oturumlarının özetidir. SecFlowX Ekibi Öğrenme Yol Haritası'nın Faz 0, Faz 1 Hafta 1, Hafta 2 ve Hafta 3 bölümlerini kapsar.*
